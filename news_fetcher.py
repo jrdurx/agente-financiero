@@ -1,5 +1,4 @@
 import os
-import sys
 import requests
 import re
 from datetime import datetime
@@ -15,21 +14,18 @@ def send_telegram(message):
     try:
         url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
         data = {"chat_id": TELEGRAM_CHAT_ID, "text": message, "parse_mode": "Markdown"}
-        r = requests.post(url, json=data, timeout=15)
-        print(f"Telegram response: {r.status_code}")
-    except Exception as e:
-        print(f"Error sending telegram: {e}")
+        requests.post(url, json=data, timeout=15)
+    except:
+        pass
 
 def clean_html(text):
     if not text:
         return ""
     text = re.sub(r'<[^>]+>', '', text)
-    text = text.replace('&nbsp;', ' ')
-    text = text.replace('&amp;', '&')
-    text = text.replace('"', '"')
+    text = text.replace('&nbsp;', ' ').replace('&amp;', '&').replace('"', '"')
     return text.strip()
 
-def clean_text(text, max_len=120):
+def clean_text(text, max_len=150):
     if not text:
         return ""
     text = clean_html(text).strip()
@@ -37,7 +33,7 @@ def clean_text(text, max_len=120):
         return text
     text = text[:max_len]
     last_space = text.rfind(' ')
-    if last_space > max_len * 0.6:
+    if last_space > max_len * 0.7:
         text = text[:last_space]
     return text + "..."
 
@@ -58,51 +54,36 @@ def calculate_rsi(prices, period=14):
         return None
 
 def get_rsi_label(rsi):
-    if rsi is None:
-        return "Sin datos"
-    if rsi >= 70:
-        return "Sobrecompra"
-    if rsi <= 30:
-        return "Sobreventa"
+    if rsi is None: return "Sin datos"
+    if rsi >= 70: return "Sobrecompra"
+    if rsi <= 30: return "Sobreventa"
     return "Neutro"
 
 def get_stock(ticker, name):
     try:
         stock = yf.Ticker(ticker)
         hist = stock.history(period="5d")
-        if hist.empty or len(hist) < 2:
-            return None
+        if hist.empty or len(hist) < 2: return None
         price = hist['Close'].iloc[-1]
         prev = hist['Close'].iloc[-2]
         change = ((price - prev) / prev) * 100
-        prices_arr = hist['Close'].values
-        rsi = calculate_rsi(prices_arr)
+        rsi = calculate_rsi(hist['Close'].values)
         return {
-            'name': name,
-            'price': round(price, 2),
-            'change': round(change, 2),
-            'trend': "Subida" if change > 0 else "Bajada",
-            'rsi': rsi,
-            'rsi_label': get_rsi_label(rsi)
+            'name': name, 'price': round(price, 2), 'change': round(change, 2),
+            'trend': "Subida" if change > 0 else "Bajada", 'rsi': rsi, 'rsi_label': get_rsi_label(rsi)
         }
-    except Exception as e:
-        print(f"Error getting {ticker}: {e}")
+    except:
         return None
 
 def get_index(ticker, name):
     try:
         stock = yf.Ticker(ticker)
         hist = stock.history(period="5d")
-        if hist.empty or len(hist) < 2:
-            return {'name': name, 'change': 0, 'trend': ''}
+        if hist.empty or len(hist) < 2: return {'name': name, 'change': 0, 'trend': ''}
         price = hist['Close'].iloc[-1]
         prev = hist['Close'].iloc[-2]
         change = ((price - prev) / prev) * 100
-        return {
-            'name': name,
-            'change': round(change, 2),
-            'trend': "Subida" if change > 0 else "Bajada"
-        }
+        return {'name': name, 'change': round(change, 2), 'trend': "Subida" if change > 0 else "Bajada"}
     except:
         return {'name': name, 'change': 0, 'trend': ''}
 
@@ -110,14 +91,11 @@ def get_crypto(sym, name):
     try:
         url = f"https://api.coingecko.com/api/v3/simple/price?ids={sym}&vs_currencies=usd&include_24hr_change=true"
         r = requests.get(url, timeout=10)
-        if r.status_code != 200:
-            return None
+        if r.status_code != 200: return None
         data = r.json()
-        if sym not in data:
-            return None
+        if sym not in data: return None
         price = data[sym]['usd']
         change = data[sym]['usd_24h_change']
-        
         rsi = None
         try:
             r2 = requests.get(f"https://api.coingecko.com/api/v3/coins/{sym}/market_chart?vs_currency=usd&days=30", timeout=10)
@@ -126,14 +104,9 @@ def get_crypto(sym, name):
                 rsi = calculate_rsi(np.array(prices))
         except:
             pass
-        
         return {
-            'name': name,
-            'price': round(price, 2),
-            'change': round(change, 2),
-            'trend': "Subida" if change > 0 else "Bajada",
-            'rsi': rsi,
-            'rsi_label': get_rsi_label(rsi)
+            'name': name, 'price': round(price, 2), 'change': round(change, 2),
+            'trend': "Subida" if change > 0 else "Bajada", 'rsi': rsi, 'rsi_label': get_rsi_label(rsi)
         }
     except:
         return None
@@ -152,7 +125,7 @@ def get_market_news():
                     if title and title not in seen:
                         seen.add(title)
                         desc = clean_text(item.findtext('description', ''))
-                        news.append({'title': title[:70], 'desc': desc, 'source': 'Yahoo Finance'})
+                        news.append({'title': title, 'desc': desc, 'source': 'Yahoo Finance'})
             except:
                 pass
     except:
@@ -168,10 +141,10 @@ def get_market_news():
                     title = item.findtext('title', '')
                     if title and title not in seen:
                         seen.add(title)
-                        news.append({'title': title[:70], 'desc': clean_text(item.findtext('description', '')), 'source': 'Google News'})
+                        desc = clean_text(item.findtext('description', ''))
+                        news.append({'title': title, 'desc': desc, 'source': 'Google News'})
         except:
             pass
-    
     return news[:5]
 
 def get_crypto_news():
@@ -184,16 +157,13 @@ def get_crypto_news():
                 title = item.get('title', '')
                 if title and title not in seen:
                     seen.add(title)
-                    news.append({'title': title[:70], 'desc': clean_text(item.get('body', '')), 'source': item.get('source_info', {}).get('name', 'Crypto')})
+                    news.append({'title': title, 'desc': clean_text(item.get('body', '')), 'source': item.get('source_info', {}).get('name', 'Crypto')})
     except:
         pass
     return news[:5]
 
 def get_video():
-    urls = [
-        "https://www.youtube.com/@JohnEconomist/videos",
-        "https://www.youtube.com/channel/UCZ4Y6Kk2pNuj3fFK8Y4_2_Aw/videos"
-    ]
+    urls = ["https://www.youtube.com/@JohnEconomist/videos", "https://www.youtube.com/channel/UCZ4Y6Kk2pNuj3fFK8Y4_2_Aw/videos"]
     for url in urls:
         try:
             r = requests.get(url, headers={'User-Agent': 'Mozilla/5.0'}, timeout=10)
@@ -207,50 +177,44 @@ def get_video():
 
 def make_msg(news, cryptos, stocks, indices, crypton, video):
     now = datetime.now(SPAIN_TZ).strftime("%d/%m/%Y")
-    m = f"📊 *INFORME DIARIO - ECONOMIA Y MERCADOS* | {now}\n\n───────────────\n\n"
+    m = f"📊 *INFORME DIARIO - ECONOMIA Y MERCADOS* | {now}\n\n────────────────\n\n"
     m += "📰 *NOTICIAS - MERCADOS*\n\n"
     for i, n in enumerate(news, 1):
-        m += f"*{i:02d}. {n['title'][:60]}*\n"
-        if n.get('desc'): m += f"   {n['desc']}\n"
-        m += f"   ({n['source']})\n\n"
-    m += "───────────────\n\n📰 *NOTICIAS - CRIPTO*\n\n"
+        m += f"*{i:02d}. {n['title']}*\n\n   {n['desc']}\n\n   Fuente: {n['source']}\n\n"
+    m += "────────────────\n\n📰 *NOTICIAS - CRIPTO*\n\n"
     for i, n in enumerate(crypton, 1):
-        m += f"*{i:02d}. {n['title'][:60]}*\n"
-        if n.get('desc'): m += f"   {n['desc']}\n"
-        m += f"   ({n['source']})\n\n"
-    m += "───────────────\n\n📈 *ANALISIS MERCADOS*\n\n"
+        m += f"*{i:02d}. {n['title']}*\n\n   {n['desc']}\n\n   Fuente: {n['source']}\n\n"
+    m += "────────────────\n\n📈 *ANALISIS MERCADOS*\n\n"
     for s in stocks:
         m += f"- {s['name']}\n  Precio: {s['price']} | Cambio: {s['change']}% ({s['trend']})\n  RSI: {s['rsi']} - {s['rsi_label']}\n\n"
     m += "📊 *INDICES*\n\n"
     for i in indices:
         s = "+" if i['change'] > 0 else ""
         m += f"• {i['name']}: {s}{i['change']}% ({i['trend']})\n"
-    m += "\n───────────────\n\n📈 *ANALISIS CRIPTO*\n\n"
+    m += "\n────────────────\n\n📈 *ANALISIS CRIPTO*\n\n"
     for c in cryptos:
         m += f"- {c['name']}: {c['price']}$ ({c['change']}% {c['trend']})\n"
         if c.get('rsi'): m += f"  RSI: {c['rsi']} - {c['rsi_label']}\n"
         m += "\n"
-    m += "───────────────\n\n🧠 *CONCLUSION*\n"
+    m += "────────────────\n\n🧠 *CONCLUSION*\n"
     pos = sum(1 for i in indices if i['change'] > 0)
     m += "Dia positivo en mercados.\n" if pos > 2 else "Dia negativo en mercados.\n" if pos < 2 else "Mercados laterales.\n"
     cpos = sum(1 for c in cryptos if c['change'] > 0)
     m += "Criptos al alza.\n" if cpos > 1 else "Criptos a la baja.\n"
-    m += "───────────────\n\n🎬 *JOHN ECONOMIST*\n"
+    m += "────────────────\n\n🎬 *JOHN ECONOMIST*\n"
     if video: m += f"{video['title']}\n{video['url']}\n"
-    else: m += "Sin video nuevo.\n"
+    else: m += "No hay nuevo video.\n"
     return m
 
 def main():
-    print("Starting...")
     news = get_market_news()
     crypton = get_crypto_news()
     stocks = [s for s in [get_stock("VWCE.MI", "MSCI World"), get_stock("NVDA", "NVIDIA")] if s]
-    indices = [get_index("^GSPC", "S&P 500"), get_index("^IXIC", "NASDAQ"), get_index("^IBEX", "IBEX 35"), get_index("^STOXX", "STOXX 600")]
+    indices = [get_index("^GSPC", "S&P 500"), get_index("^IXIC", "NASDAQ 100"), get_index("^IBEX", "IBEX 35"), get_index("^STOXX", "STOXX 600")]
     cryptos = [c for c in [get_crypto("bitcoin", "BTC"), get_crypto("ethereum", "ETH"), get_crypto("ripple", "XRP")] if c]
     video = get_video()
     msg = make_msg(news, cryptos, stocks, indices, crypton, video)
     send_telegram(msg)
-    print("Done!")
 
 if __name__ == "__main__":
     main()
