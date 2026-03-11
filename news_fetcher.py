@@ -16,56 +16,49 @@ def summarize_text(text, max_chars=700):
     if not text or len(text.strip()) < 50:
         return "Sin información disponible."
     
-    try:
-        import urllib.request
-        import urllib.parse
-        import json
-        
-        url = "https://api-inference.huggingface.co/models/facebook/bart-large-cnn"
-        
-        headers = {
-            "Authorization": f"Bearer {HF_TOKEN}",
-            "Content-Type": "application/json"
-        }
-        
-        data = json.dumps({"inputs": text[:2000]}).encode('utf-8')
-        
-        req = urllib.request.Request(url, data=data, headers=headers, method='POST')
-        
-        with urllib.request.urlopen(req, timeout=60) as response:
-            result = json.loads(response.read().decode('utf-8'))
+    text = text.strip()
+    
+    if HF_TOKEN:
+        try:
+            url = "https://api-inference.huggingface.co/pipeline/summarization/facebook/bart-large-cnn"
+            headers = {
+                "Authorization": f"Bearer {HF_TOKEN}",
+                "Content-Type": "application/json"
+            }
+            data = {"inputs": text[:1500], "parameters": {"max_new_tokens": 200}}
             
-            if isinstance(result, list) and len(result) > 0:
-                summary = result[0].get('summary_text', '')
-            elif isinstance(result, dict):
-                summary = result.get('summary_text', str(result))
+            response = requests.post(url, headers=headers, json=data, timeout=45)
+            
+            if response.status_code == 200:
+                result = response.json()
+                if isinstance(result, list) and len(result) > 0:
+                    summary = result[0].get('summary_text', '').strip()
+                    if summary and len(summary) > 10:
+                        if len(summary) > max_chars:
+                            summary = summary[:max_chars] + "..."
+                        return summary
             else:
-                summary = str(result)
-            
-            summary = summary.strip()
-            
-            if summary and len(summary) > 20:
-                if len(summary) > max_chars + 100:
-                    summary = summary[:max_chars]
-                    last_period = summary.rfind('.')
-                    if last_period > max_chars * 0.5:
-                        summary = summary[:last_period + 1]
-                    else:
-                        summary = summary.rstrip() + '...'
-                return summary
-    except Exception as e:
-        print(f"HF API error: {e}")
+                print(f"HF API: {response.status_code} - fallback")
+        except Exception as e:
+            print(f"HF error: {e}")
     
     sentences = re.split(r'[.!?]+', text)
-    summary = ""
-    for s in sentences[:3]:
-        s = s.strip()
-        if s and len(s) > 10:
-            summary += s + ". "
-            if len(summary) > max_chars * 0.7:
-                break
+    summary_parts = []
+    char_count = 0
     
-    return (summary.strip() + "...") if summary else text[:max_chars] + "..."
+    for s in sentences[:5]:
+        s = s.strip()
+        if s and len(s) > 15:
+            if char_count + len(s) > max_chars * 0.8:
+                break
+            summary_parts.append(s)
+            char_count += len(s)
+    
+    summary = ". ".join(summary_parts)
+    if len(summary) > max_chars:
+        summary = summary[:max_chars] + "..."
+    
+    return summary if summary else text[:max_chars] + "..."
 
 def send_telegram(message):
     try:
