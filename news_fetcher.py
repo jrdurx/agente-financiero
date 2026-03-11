@@ -35,28 +35,64 @@ def clean_text(text, max_len=150):
     text = clean_html(text).strip()
     text = re.sub(r'\s+', ' ', text)
     
-    # Try to take first complete sentence
+    # Take first sentence as fallback
     sentences = re.split(r'[.!?]+', text)
     sentences = [s.strip() for s in sentences if s.strip()]
     
     if sentences:
-        # Take first sentence if it's long enough
         first_sent = sentences[0]
-        if len(first_sent) >= 30 and len(first_sent) <= max_len:
+        if len(first_sent) <= max_len:
             return first_sent
-        if len(first_sent) > max_len:
-            first_sent = first_sent[:max_len]
-            last_space = first_sent.rfind(' ')
-            if last_space > max_len * 0.6:
-                first_sent = first_sent[:last_space]
-            return first_sent + "..."
+        first_sent = first_sent[:max_len]
+        last_space = first_sent.rfind(' ')
+        if last_space > max_len * 0.6:
+            first_sent = first_sent[:last_space]
+        return first_sent + "..."
     
-    # Fallback: limit length
     text = text[:max_len]
     last_space = text.rfind(' ')
     if last_space > max_len * 0.6:
         text = text[:last_space]
     return text + "..."
+
+HUGGINGFACE_TOKEN = os.getenv('HUGGINGFACE_TOKEN')
+
+def summarize_with_ai(text, max_lines=6):
+    """Resume un texto usando HuggingFace (gratis)"""
+    if not text or not HUGGINGFACE_TOKEN:
+        return clean_text(text, 150)
+    
+    try:
+        # API de HuggingFace para resumen
+        API_URL = "https://api-inference.huggingface.co/models/facebook/bart-large-cnn"
+        headers = {"Authorization": f"Bearer {HUGGINGFACE_TOKEN}"}
+        
+        payload = {
+            "inputs": text,
+            "parameters": {
+                "max_length": 200,
+                "min_length": 50,
+                "do_sample": False
+            }
+        }
+        
+        r = requests.post(API_URL, headers=headers, json=payload, timeout=20)
+        
+        if r.status_code == 200:
+            result = r.json()
+            if isinstance(result, list) and len(result) > 0:
+                summary = result[0].get('summary_text', '')
+                # Limpiar el resumen
+                summary = clean_html(summary).strip()
+                summary = re.sub(r'\s+', ' ', summary)
+                return summary
+        else:
+            print(f"Error HuggingFace: {r.status_code} - {r.text}")
+            return clean_text(text, 150)
+            
+    except Exception as e:
+        print(f"Error AI summary: {e}")
+        return clean_text(text, 150)
 
 def calculate_rsi(prices, period=14):
     if prices is None or len(prices) < period + 1:
@@ -168,8 +204,9 @@ def get_market_news():
                     title = item.findtext('title', '')
                     if title and title not in seen:
                         seen.add(title)
-                        desc = clean_text(item.findtext('description', ''))
-                        news.append({'title': title[:70], 'desc': desc, 'source': 'Yahoo Finance'})
+                        raw_desc = item.findtext('description', '')
+                        desc = summarize_with_ai(raw_desc) if raw_desc else ""
+                        news.append({'title': title, 'desc': desc, 'source': 'Yahoo Finance'})
             except:
                 pass
     except:
@@ -185,7 +222,9 @@ def get_market_news():
                     title = item.findtext('title', '')
                     if title and title not in seen:
                         seen.add(title)
-                        news.append({'title': title[:70], 'desc': clean_text(item.findtext('description', '')), 'source': 'Google News'})
+                        raw_desc = item.findtext('description', '')
+                        desc = summarize_with_ai(raw_desc) if raw_desc else ""
+                        news.append({'title': title, 'desc': desc, 'source': 'Google News'})
         except:
             pass
     
@@ -201,7 +240,9 @@ def get_crypto_news():
                 title = item.get('title', '')
                 if title and title not in seen:
                     seen.add(title)
-                    news.append({'title': title[:70], 'desc': clean_text(item.get('body', '')), 'source': item.get('source_info', {}).get('name', 'Crypto')})
+                    raw_desc = item.get('body', '')
+                    desc = summarize_with_ai(raw_desc) if raw_desc else ""
+                    news.append({'title': title, 'desc': desc, 'source': item.get('source_info', {}).get('name', 'Crypto')})
     except:
         pass
     return news[:5]
