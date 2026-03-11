@@ -220,7 +220,7 @@ def format_message(market_news, crypto_news, stocks, indices, cryptos, video):
     now = datetime.now(SPAIN_TZ).strftime("%d/%m/%Y")
     
     msg = f"📊 *INFORME DIARIO – ECONOMÍA Y MERCADOS* | {now}\n"
-    msg += "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+    msg += "─────────────────────────\n\n"
     
     msg += "📰 *NOTICIAS ECONÓMICAS – MERCADOS*\n\n"
     for i, item in enumerate(market_news, 1):
@@ -229,7 +229,7 @@ def format_message(market_news, crypto_news, stocks, indices, cryptos, video):
             msg += f"   {item['description']}\n"
         msg += f"   📰 {item['source']}\n\n"
     
-    msg += "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+    msg += "─────────────────────────\n\n"
     
     msg += "📰 *NOTICIAS ECONÓMICAS – CRIPTO*\n\n"
     for i, item in enumerate(crypto_news, 1):
@@ -238,7 +238,7 @@ def format_message(market_news, crypto_news, stocks, indices, cryptos, video):
             msg += f"   {item['description']}\n"
         msg += f"   📰 {item['source']}\n\n"
     
-    msg += "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+    msg += "─────────────────────────\n\n"
     msg += "📈 *ANÁLISIS DE MERCADOS*\n\n"
     
     for stock in stocks:
@@ -248,14 +248,14 @@ def format_message(market_news, crypto_news, stocks, indices, cryptos, video):
         msg += f"• RSI (14): {stock['rsi']}\n"
         msg += f"• Lectura: {stock['rsi_reading']}\n\n"
     
-    msg += "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+    msg += "─────────────────────────\n\n"
     msg += "📊 *RESUMEN DE ÍNDICES*\n\n"
     
     for idx in indices:
         sign = "+" if idx['change'] > 0 else ""
         msg += f"• {idx['name']} –> {sign}{idx['change']}% {idx['trend']}\n"
     
-    msg += "\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+    msg += "\n─────────────────────────\n\n"
     msg += "📈 *ANÁLISIS CRIPTO*\n\n"
     
     for crypto in cryptos:
@@ -267,11 +267,11 @@ def format_message(market_news, crypto_news, stocks, indices, cryptos, video):
             msg += f"• Lectura: {crypto['rsi_reading']}\n"
         msg += "\n"
     
-    msg += "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+    msg += "─────────────────────────\n\n"
     
     conclusion = generate_conclusion(market_news, crypto_news, indices, cryptos)
     msg += f"🧠 *CONCLUSIÓN DEL DÍA*\n{conclusion}\n\n"
-    msg += "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+    msg += "─────────────────────────\n\n"
     
     msg += "🎬 *JOHN ECONOMIST*\n"
     if video:
