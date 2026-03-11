@@ -58,41 +58,59 @@ def clean_text(text, max_len=150):
 HUGGINGFACE_TOKEN = os.getenv('HUGGINGFACE_TOKEN')
 
 def summarize_with_ai(text, max_lines=6):
-    """Resume un texto usando HuggingFace (gratis)"""
-    if not text or not HUGGINGFACE_TOKEN:
-        return clean_text(text, 150)
+    """Resume un texto usando resumen extractivo (sin API externa)"""
+    if not text:
+        return ""
     
     try:
-        # API de HuggingFace para resumen
-        API_URL = "https://api-inference.huggingface.co/models/facebook/bart-large-cnn"
-        headers = {"Authorization": f"Bearer {HUGGINGFACE_TOKEN}"}
+        # Resumen extractivo: tomar las oraciones más importantes
+        text = clean_html(text).strip()
+        text = re.sub(r'\s+', ' ', text)
         
-        # 6 líneas ≈ 500-600 caracteres
-        payload = {
-            "inputs": text,
-            "parameters": {
-                "max_length": 500,
-                "min_length": 200,
-                "do_sample": False
-            }
-        }
+        # Dividir en oraciones
+        sentences = re.split(r'[.!?]+', text)
+        sentences = [s.strip() for s in sentences if s.strip()]
         
-        r = requests.post(API_URL, headers=headers, json=payload, timeout=20)
-        
-        if r.status_code == 200:
-            result = r.json()
-            if isinstance(result, list) and len(result) > 0:
-                summary = result[0].get('summary_text', '')
-                # Limpiar el resumen
-                summary = clean_html(summary).strip()
-                summary = re.sub(r'\s+', ' ', summary)
-                return summary
-        else:
-            print(f"Error HuggingFace: {r.status_code} - {r.text}")
+        if not sentences:
             return clean_text(text, 150)
-            
+        
+        # Calcular puntuación por oración (más larga = más importante)
+        scored = []
+        for i, sent in enumerate(sentences):
+            # Puntuación basada en longitud y posición (priorizar las primeras)
+            score = len(sent) * (1 + 0.5 / (i + 1))
+            scored.append((sent, score))
+        
+        # Ordenar por puntuación
+        scored.sort(key=lambda x: x[1], reverse=True)
+        
+        # Tomar las oraciones más importantes
+        num_sentences = min(6, len(sentences))
+        selected = [s[0] for s in scored[:num_sentences]]
+        
+        # Reconstruir el resumen manteniendo orden original
+        final_sentences = []
+        for sent in sentences:
+            if sent in selected and sent not in final_sentences:
+                final_sentences.append(sent)
+        
+        # Si no hay suficientes, añadir del sorted
+        if len(final_sentences) < num_sentences:
+            for sent, _ in scored:
+                if sent not in final_sentences:
+                    final_sentences.append(sent)
+                if len(final_sentences) >= num_sentences:
+                    break
+        
+        # Unir las oraciones
+        summary = ". ".join(final_sentences[:num_sentences])
+        if not summary.endswith('.'):
+            summary += "."
+        
+        return summary
+        
     except Exception as e:
-        print(f"Error AI summary: {e}")
+        print(f"Error en resumen: {e}")
         return clean_text(text, 150)
 
 def calculate_rsi(prices, period=14):
