@@ -1,4 +1,4 @@
-name: Daily Economic News
+name: Daily Financial Report
 
 on:
   schedule:
@@ -20,8 +20,9 @@ jobs:
         run: |
           pip install -r requirements.txt
       
-      - name: Run news fetcher
+      - name: Run script
         env:
           TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
         run: python news_fetcher.py
