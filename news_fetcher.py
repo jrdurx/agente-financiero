@@ -62,10 +62,36 @@ def summarize_text(text, max_chars=700):
 
 def send_telegram(message):
     try:
-        url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
-        data = {"chat_id": TELEGRAM_CHAT_ID, "text": message, "parse_mode": "Markdown"}
-        r = requests.post(url, json=data, timeout=15)
-        print(f"Telegram response: {r.status_code}")
+        print(f"Message length: {len(message)} chars")
+        
+        if len(message) > 4000:
+            print("Message too long, splitting...")
+            part1 = message[:4000]
+            last_newline = part1.rfind('\n')
+            if last_newline < 3000:
+                last_newline = part1.rfind('\n\n')
+            if last_newline < 3000:
+                last_newline = 4000
+            
+            part1 = message[:last_newline]
+            part2 = message[last_newline:]
+            
+            url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
+            r1 = requests.post(url, json={"chat_id": TELEGRAM_CHAT_ID, "text": part1, "parse_mode": "Markdown"}, timeout=15)
+            print(f"Telegram part1: {r1.status_code}")
+            
+            if r1.status_code == 200 and part2:
+                import time
+                time.sleep(1)
+                r2 = requests.post(url, json={"chat_id": TELEGRAM_CHAT_ID, "text": part2, "parse_mode": "Markdown"}, timeout=15)
+                print(f"Telegram part2: {r2.status_code}")
+        else:
+            url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
+            data = {"chat_id": TELEGRAM_CHAT_ID, "text": message, "parse_mode": "Markdown"}
+            r = requests.post(url, json=data, timeout=15)
+            print(f"Telegram response: {r.status_code}")
+            if r.status_code != 200:
+                print(f"Telegram error: {r.text}")
     except Exception as e:
         print(f"Error sending telegram: {e}")
 
@@ -308,13 +334,23 @@ def make_msg(news, cryptos, stocks, indices, crypton, video):
 
 def main():
     print("Starting...")
+    print(f"TELEGRAM_TOKEN set: {bool(TELEGRAM_TOKEN)}")
+    print(f"TELEGRAM_CHAT_ID set: {bool(TELEGRAM_CHAT_ID)}")
+    
     news = get_market_news()
+    print(f"Got {len(news)} market news")
+    
     crypton = get_crypto_news()
+    print(f"Got {len(crypton)} crypto news")
+    
     stocks = [s for s in [get_stock("VWCE.MI", "MSCI World"), get_stock("NVDA", "NVIDIA")] if s]
     indices = [get_index("^GSPC", "S&P 500"), get_index("^IXIC", "NASDAQ"), get_index("^IBEX", "IBEX 35"), get_index("^STOXX", "STOXX 600")]
     cryptos = [c for c in [get_crypto("bitcoin", "BTC"), get_crypto("ethereum", "ETH"), get_crypto("ripple", "XRP")] if c]
     video = get_video()
+    
     msg = make_msg(news, cryptos, stocks, indices, crypton, video)
+    print(f"Message generated: {len(msg)} chars")
+    
     send_telegram(msg)
     print("Done!")
 
