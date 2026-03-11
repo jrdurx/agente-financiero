@@ -81,36 +81,17 @@ def summarize_with_ai(text, max_lines=6):
         if not sentences:
             return clean_text(text, 150)
         
-        # Calcular puntuación por oración (más larga = más importante)
-        scored = []
-        for i, sent in enumerate(sentences):
-            # Puntuación basada en longitud y posición (priorizar las primeras)
-            score = len(sent) * (1 + 0.5 / (i + 1))
-            scored.append((sent, score))
+        # Tomar máximo 6 oraciones del principio (mejor para noticias)
+        selected = sentences[:max_lines]
+        summary = ". ".join(selected)
         
-        # Ordenar por puntuación
-        scored.sort(key=lambda x: x[1], reverse=True)
+        # Limitar a 400 caracteres para caber en 4-5 líneas
+        if len(summary) > 400:
+            summary = summary[:400]
+            last_space = summary.rfind(' ')
+            if last_space > 350:
+                summary = summary[:last_space]
         
-        # Tomar las oraciones más importantes
-        num_sentences = min(6, len(sentences))
-        selected = [s[0] for s in scored[:num_sentences]]
-        
-        # Reconstruir el resumen manteniendo orden original
-        final_sentences = []
-        for sent in sentences:
-            if sent in selected and sent not in final_sentences:
-                final_sentences.append(sent)
-        
-        # Si no hay suficientes, añadir del sorted
-        if len(final_sentences) < num_sentences:
-            for sent, _ in scored:
-                if sent not in final_sentences:
-                    final_sentences.append(sent)
-                if len(final_sentences) >= num_sentences:
-                    break
-        
-        # Unir las oraciones
-        summary = ". ".join(final_sentences[:num_sentences])
         if not summary.endswith('.'):
             summary += "."
         
