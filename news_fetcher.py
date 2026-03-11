@@ -15,6 +15,29 @@ def send_telegram(message):
     data = {"chat_id": TELEGRAM_CHAT_ID, "text": message, "parse_mode": "Markdown"}
     requests.post(url, json=data)
 
+def clean_html(text):
+    if not text:
+        return ""
+    text = re.sub(r'<[^>]+>', '', text)
+    text = text.replace('&nbsp;', ' ')
+    text = text.replace('&amp;', '&')
+    text = text.replace('"', '"')
+    text = text.replace(''', "'")
+    return text.strip()
+
+def clean_text(text, max_length=150):
+    if not text:
+        return ""
+    text = clean_html(text)
+    text = text.strip()
+    if len(text) <= max_length:
+        return text
+    text = text[:max_length]
+    last_space = text.rfind(' ')
+    if last_space > max_length * 0.7:
+        text = text[:last_space]
+    return text + "..."
+
 def calculate_rsi(prices, period=14):
     if len(prices) < period + 1:
         return None
@@ -42,18 +65,6 @@ def get_rsi_reading(rsi):
         return "Sobreventa - posible rebote"
     else:
         return "Neutro"
-
-def clean_text(text, max_length=150):
-    if not text:
-        return ""
-    text = text.strip()
-    if len(text) <= max_length:
-        return text
-    text = text[:max_length]
-    last_space = text.rfind(' ')
-    if last_space > max_length * 0.7:
-        text = text[:last_space]
-    return text + "..."
 
 def get_stock_data(ticker, name):
     try:
@@ -144,19 +155,24 @@ def get_market_news():
     seen = set()
     
     try:
-        url = "https://api.mediastack.com/v1/news?access_key=deb5b72d2bc5b08dbd2f9f2d3d4a5b6c&categories=business&languages=es&limit=10"
+        url = "https://feeds.finance.yahoo.com/rss/headline?s=^GSPC,^IXIC,^DJI&format=xml"
         r = requests.get(url, timeout=10)
         if r.status_code == 200:
-            data = r.json()
-            for item in data.get('data', [])[:5]:
-                title = item.get('title', '')
-                if title and title not in seen and title.lower() != 'null':
-                    seen.add(title)
-                    news.append({
-                        'title': title,
-                        'description': clean_text(item.get('description', '')),
-                        'source': item.get('source', 'Fuente')
-                    })
+            import xml.etree.ElementTree as ET
+            try:
+                root = ET.fromstring(r.text)
+                for item in root.findall('.//item')[:5]:
+                    title = item.findtext('title', '')
+                    desc = clean_html(item.findtext('description', ''))
+                    if title and title not in seen:
+                        seen.add(title)
+                        news.append({
+                            'title': title,
+                            'description': clean_text(desc),
+                            'source': 'Yahoo Finance'
+                        })
+            except:
+                pass
     except:
         pass
     
@@ -171,9 +187,10 @@ def get_market_news():
                     title = item.findtext('title', '')
                     if title and title not in seen:
                         seen.add(title)
+                        desc = clean_html(item.findtext('description', ''))
                         news.append({
                             'title': title,
-                            'description': clean_text(item.findtext('description', '')),
+                            'description': clean_text(desc),
                             'source': 'Google News'
                         })
         except:
@@ -204,40 +221,37 @@ def get_crypto_news():
     return news[:5]
 
 def get_john_economist_video():
-    try:
-        import urllib.request
-        url = "https://www.youtube.com/@JohnEconomist/videos"
-        req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
-        response = urllib.request.urlopen(req, timeout=10)
-        data = response.read().decode('utf-8')
-        
-        match = re.search(r'"videoId":"([^"]+)","title":"([^"]+)","thumbnail"', data)
-        if match:
-            video_id = match.group(1)
-            title = match.group(2).replace('\\u0026', '&').replace('\\"', '"')
-            return {
-                'title': title,
-                'url': f"https://www.youtube.com/watch?v={video_id}"
-            }
-    except Exception as e:
-        pass
+    channel_ids = ["UCZ4Y6Kk2pNuj3fFK8Y4_2_Aw", "JohnEconomist"]
+    
+    for channel_id in channel_ids:
+        try:
+            url = f"https://www.youtube.com/channel/{channel_id}/videos"
+            headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
+            r = requests.get(url, headers=headers, timeout=10)
+            if r.status_code == 200:
+                data = r.text
+                match = re.search(r'"videoId":"([^"]+)","title":"([^"]+)","thumbnail"', data)
+                if match:
+                    video_id = match.group(1)
+                    title = match.group(2).replace('\\u0026', '&').replace('\\"', '"')
+                    return {'title': title, 'url': f"https://www.youtube.com/watch?v={video_id}"}
+        except:
+            continue
     
     try:
-        url = "https://www.youtube.com/results?search_query=John+Economist"
-        headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
+        url = "https://www.youtube.com/@JohnEconomist/videos"
+        headers = {'User-Agent': 'Mozilla/5.0'}
         r = requests.get(url, headers=headers, timeout=10)
         if r.status_code == 200:
             data = r.text
-            match = re.search(r'"videoId":"([^"]+)","title":"([^"]+)","length"', data)
+            match = re.search(r'"videoId":"([^"]+)","title":"([^"]+)","thumbnail"', data)
             if match:
                 video_id = match.group(1)
                 title = match.group(2).replace('\\u0026', '&')
-                return {
-                    'title': title,
-                    'url': f"https://www.youtube.com/watch?v={video_id}"
-                }
+                return {'title': title, 'url': f"https://www.youtube.com/watch?v={video_id}"}
     except:
         pass
+    
     return None
 
 def generate_conclusion(market_news, crypto_news, indices, cryptos):
@@ -265,7 +279,7 @@ def format_message(market_news, crypto_news, stocks, indices, cryptos, video):
     now = datetime.now(SPAIN_TZ).strftime("%d/%m/%Y")
     
     msg = f"📊 *INFORME DIARIO - ECONOMIA Y MERCADOS* | {now}\n\n"
-    msg += "─────────────────────\n\n"
+    msg += "─────────────────────────\n\n"
     
     msg += "📰 *NOTICIAS ECONOMICAS - MERCADOS*\n\n"
     for i, item in enumerate(market_news, 1):
@@ -274,7 +288,7 @@ def format_message(market_news, crypto_news, stocks, indices, cryptos, video):
             msg += f"   {item['description']}\n\n"
         msg += f"   Fuente: {item['source']}\n\n"
     
-    msg += "─────────────────────\n\n"
+    msg += "─────────────────────────\n\n"
     
     msg += "📰 *NOTICIAS ECONOMICAS - CRIPTO*\n\n"
     for i, item in enumerate(crypto_news, 1):
@@ -283,7 +297,7 @@ def format_message(market_news, crypto_news, stocks, indices, cryptos, video):
             msg += f"   {item['description']}\n\n"
         msg += f"   Fuente: {item['source']}\n\n"
     
-    msg += "─────────────────────\n\n"
+    msg += "─────────────────────────\n\n"
     msg += "📈 *ANALISIS DE MERCADOS*\n\n"
     
     for stock in stocks:
@@ -293,7 +307,7 @@ def format_message(market_news, crypto_news, stocks, indices, cryptos, video):
         msg += f"  RSI (14): {stock['rsi']}\n"
         msg += f"  Lectura: {stock['rsi_reading']}\n\n"
     
-    msg += "─────────────────────\n\n"
+    msg += "─────────────────────────\n\n"
     msg += "📊 *RESUMEN DE INDICES*\n\n"
     
     for idx in indices:
@@ -301,7 +315,7 @@ def format_message(market_news, crypto_news, stocks, indices, cryptos, video):
         trend_text = f"({idx['trend']})" if idx['trend'] else ""
         msg += f"• {idx['name']} -> {sign}{idx['change']}% {trend_text}\n"
     
-    msg += "\n─────────────────────\n\n"
+    msg += "\n─────────────────────────\n\n"
     msg += "📈 *ANALISIS CRIPTO*\n\n"
     
     for crypto in cryptos:
@@ -313,11 +327,11 @@ def format_message(market_news, crypto_news, stocks, indices, cryptos, video):
             msg += f"  Lectura: {crypto['rsi_reading']}\n"
         msg += "\n"
     
-    msg += "─────────────────────\n\n"
+    msg += "─────────────────────────\n\n"
     
     conclusion = generate_conclusion(market_news, crypto_news, indices, cryptos)
     msg += f"🧠 *CONCLUSION DEL DIA*\n{conclusion}\n\n"
-    msg += "─────────────────────\n\n"
+    msg += "─────────────────────────\n\n"
     
     msg += "🎬 *JOHN ECONOMIST*\n"
     if video:
