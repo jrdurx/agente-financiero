@@ -284,37 +284,46 @@ def get_video():
 
 def make_msg(news, cryptos, stocks, indices, crypton, video):
     now = datetime.now(SPAIN_TZ).strftime("%d/%m/%Y")
-    m = f"📊 *INFORME DIARIO - ECONOMIA Y MERCADOS* | {now}\n\n───────────────\n\n"
+    m = f"📊 *INFORME DIARIO - ECONOMIA Y MERCADOS* | {now}\n\n────────────────\n\n"
     m += "📰 *NOTICIAS - MERCADOS*\n\n"
     for i, n in enumerate(news, 1):
         m += f"*{i:02d}. {n['title']}*\n\n"
         if n.get('desc'): m += f"   {n['desc']}\n\n"
         m += f"   Fuente: {n['source']}\n\n"
-    m += "───────────────\n\n📰 *NOTICIAS - CRIPTO*\n\n"
+    m += "────────────────\n\n📰 *NOTICIAS - CRIPTO*\n\n"
     for i, n in enumerate(crypton, 1):
         m += f"*{i:02d}. {n['title']}*\n\n"
         if n.get('desc'): m += f"   {n['desc']}\n\n"
         m += f"   Fuente: {n['source']}\n\n"
-    m += "───────────────\n\n📈 *ANALISIS MERCADOS*\n\n"
+    m += "────────────────\n\n📈 *ANALISIS MERCADOS*\n\n"
     for s in stocks:
         m += f"- {s['name']}\n  Precio: {s['price']} | Cambio: {s['change']}% ({s['trend']})\n  RSI: {s['rsi']} - {s['rsi_label']}\n\n"
     m += "📊 *INDICES*\n\n"
     for i in indices:
         s = "+" if i['change'] > 0 else ""
         m += f"• {i['name']}: {s}{i['change']}% ({i['trend']})\n"
-    m += "\n───────────────\n\n📈 *ANALISIS CRIPTO*\n\n"
+    m += "\n────────────────\n\n📈 *ANALISIS CRIPTO*\n\n"
     for c in cryptos:
         m += f"- {c['name']}: {c['price']}$ ({c['change']}% {c['trend']})\n"
         if c.get('rsi'): m += f"  RSI: {c['rsi']} - {c['rsi_label']}\n"
         m += "\n"
-    m += "───────────────\n\n🧠 *CONCLUSION*\n"
+    m += "────────────────\n\n🧠 *CONCLUSION*\n"
     pos = sum(1 for i in indices if i['change'] > 0)
     m += "Dia positivo en mercados.\n" if pos > 2 else "Dia negativo en mercados.\n" if pos < 2 else "Mercados laterales.\n"
     cpos = sum(1 for c in cryptos if c['change'] > 0)
     m += "Criptos al alza.\n" if cpos > 1 else "Criptos a la baja.\n"
-    m += "───────────────\n\n🎬 *JOHN ECONOMIST*\n"
+    m += "────────────────\n\n🎬 *JOHN ECONOMIST*\n"
     if video: m += f"{video['title']}\n{video['url']}\n"
     else: m += "Sin video nuevo.\n"
+    
+    # Limitar a 3800 caracteres para Telegram
+    if len(m) > 3800:
+        print(f"Mensaje demasiado largo ({len(m)} chars), truncando...")
+        m = m[:3800]
+        last_newline = m.rfind('\n')
+        if last_newline > 3500:
+            m = m[:last_newline]
+    
     return m
 
 def main():
