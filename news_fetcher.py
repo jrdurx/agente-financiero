@@ -67,11 +67,12 @@ def summarize_with_ai(text, max_lines=6):
         API_URL = "https://api-inference.huggingface.co/models/facebook/bart-large-cnn"
         headers = {"Authorization": f"Bearer {HUGGINGFACE_TOKEN}"}
         
+        # 6 líneas ≈ 500-600 caracteres
         payload = {
             "inputs": text,
             "parameters": {
-                "max_length": 200,
-                "min_length": 50,
+                "max_length": 500,
+                "min_length": 200,
                 "do_sample": False
             }
         }
