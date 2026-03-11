@@ -17,8 +17,15 @@ def send_telegram(message):
         data = {"chat_id": TELEGRAM_CHAT_ID, "text": message, "parse_mode": "Markdown"}
         r = requests.post(url, json=data, timeout=15)
         print(f"Telegram response: {r.status_code}")
+        print(f"Response body: {r.text[:500]}")
+        if r.status_code != 200:
+            print(f"ERROR: Telegram API returned {r.status_code}")
+            print(f"Full response: {r.text}")
+            return False
+        return True
     except Exception as e:
         print(f"Error sending telegram: {e}")
+        return False
 
 def clean_html(text):
     if not text:
