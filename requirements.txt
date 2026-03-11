@@ -1,5 +1,5 @@
 requests
-python-dotenv
 pytz
 yfinance
 numpy
+huggingface_hub
