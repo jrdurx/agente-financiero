@@ -29,12 +29,29 @@ def clean_html(text):
     text = text.replace('&quot;', '"')
     return text.strip()
 
-def clean_text(text, max_len=120):
+def clean_text(text, max_len=150):
     if not text:
         return ""
     text = clean_html(text).strip()
-    if len(text) <= max_len:
-        return text
+    text = re.sub(r'\s+', ' ', text)
+    
+    # Try to take first complete sentence
+    sentences = re.split(r'[.!?]+', text)
+    sentences = [s.strip() for s in sentences if s.strip()]
+    
+    if sentences:
+        # Take first sentence if it's long enough
+        first_sent = sentences[0]
+        if len(first_sent) >= 30 and len(first_sent) <= max_len:
+            return first_sent
+        if len(first_sent) > max_len:
+            first_sent = first_sent[:max_len]
+            last_space = first_sent.rfind(' ')
+            if last_space > max_len * 0.6:
+                first_sent = first_sent[:last_space]
+            return first_sent + "..."
+    
+    # Fallback: limit length
     text = text[:max_len]
     last_space = text.rfind(' ')
     if last_space > max_len * 0.6:
