@@ -37,11 +37,23 @@ def get_rsi_reading(rsi):
     if rsi is None:
         return "Sin datos suficientes"
     if rsi >= 70:
-        return "Sobrecompra - posible corrección"
+        return "Sobrecompra - posible correccion"
     elif rsi <= 30:
-        return "Sobreventa - posible rebond"
+        return "Sobreventa - posible rebote"
     else:
         return "Neutro"
+
+def clean_text(text, max_length=150):
+    if not text:
+        return ""
+    text = text.strip()
+    if len(text) <= max_length:
+        return text
+    text = text[:max_length]
+    last_space = text.rfind(' ')
+    if last_space > max_length * 0.7:
+        text = text[:last_space]
+    return text + "..."
 
 def get_stock_data(ticker, name):
     try:
@@ -59,7 +71,7 @@ def get_stock_data(ticker, name):
         rsi = calculate_rsi(prices)
         rsi_reading = get_rsi_reading(rsi)
         
-        trend = "📈 Subida" if change_pct > 0 else "📉 Bajada"
+        trend = "Subida" if change_pct > 0 else "Bajada"
         
         return {
             'name': name,
@@ -78,13 +90,13 @@ def get_index_data(ticker, name):
         hist = stock.history(period="2d")
         
         if len(hist) < 2:
-            return {'name': name, 'change': 0, 'trend': '➡️'}
+            return {'name': name, 'change': 0, 'trend': ''}
         
         current_price = hist['Close'].iloc[-1]
         prev_price = hist['Close'].iloc[-2]
         change_pct = ((current_price - prev_price) / prev_price) * 100
         
-        trend = "📈" if change_pct > 0 else "📉"
+        trend = "Subida" if change_pct > 0 else "Bajada"
         
         return {
             'name': name,
@@ -93,7 +105,7 @@ def get_index_data(ticker, name):
             'trend': trend
         }
     except:
-        return {'name': name, 'change': 0, 'trend': '➡️'}
+        return {'name': name, 'change': 0, 'trend': ''}
 
 def get_crypto_price(symbol, name):
     try:
@@ -113,7 +125,7 @@ def get_crypto_price(symbol, name):
                     rsi = calculate_rsi(np.array(prices))
                 
                 rsi_reading = get_rsi_reading(rsi)
-                trend = "📈 Subida" if change > 0 else "📉 Bajada"
+                trend = "Subida" if change > 0 else "Bajada"
                 
                 return {
                     'name': name,
@@ -131,26 +143,41 @@ def get_market_news():
     news = []
     seen = set()
     
-    urls = [
-        ("https://feeds.finance.yahoo.com/rss/headline?s=^GSPC,^IXIC,^STOXX600&format=xml", "markets"),
-        ("https://feeds.finance.yahoo.com/rss/headline?s=BTC-USD,ETH-USD,XRP-USD&format=xml", "crypto"),
-    ]
-    
     try:
-        url = "https://newsdata.io/api/1/news?apikey=pub_demo&q=economia%20OR%20bolsa%20OR%20acciones%20OR%20mercados&language=es&category=business"
+        url = "https://api.mediastack.com/v1/news?access_key=deb5b72d2bc5b08dbd2f9f2d3d4a5b6c&categories=business&languages=es&limit=10"
         r = requests.get(url, timeout=10)
         if r.status_code == 200:
-            for item in r.json().get('results', [])[:8]:
+            data = r.json()
+            for item in data.get('data', [])[:5]:
                 title = item.get('title', '')
-                if title and title not in seen:
+                if title and title not in seen and title.lower() != 'null':
                     seen.add(title)
                     news.append({
                         'title': title,
-                        'description': item.get('description', '')[:120],
-                        'source': item.get('source_id', 'Fuente')
+                        'description': clean_text(item.get('description', '')),
+                        'source': item.get('source', 'Fuente')
                     })
     except:
         pass
+    
+    if len(news) < 3:
+        try:
+            url = "https://news.google.com/rss/search?q=economia+bolsa+acciones&hl=es-ES&gl=ES&ceid=ES:es"
+            r = requests.get(url, timeout=10)
+            if r.status_code == 200:
+                import xml.etree.ElementTree as ET
+                root = ET.fromstring(r.text)
+                for item in root.findall('.//item')[:5]:
+                    title = item.findtext('title', '')
+                    if title and title not in seen:
+                        seen.add(title)
+                        news.append({
+                            'title': title,
+                            'description': clean_text(item.findtext('description', '')),
+                            'source': 'Google News'
+                        })
+        except:
+            pass
     
     return news[:5]
 
@@ -162,13 +189,13 @@ def get_crypto_news():
         url = "https://min-api.cryptocompare.com/data/v2/news/?lang=ES"
         r = requests.get(url, timeout=10)
         if r.status_code == 200:
-            for item in r.json().get('Data', [])[:8]:
+            for item in r.json().get('Data', [])[:5]:
                 title = item.get('title', '')
                 if title and title not in seen:
                     seen.add(title)
                     news.append({
                         'title': title,
-                        'description': item.get('body', '')[:120],
+                        'description': clean_text(item.get('body', '')),
                         'source': item.get('source_info', {}).get('name', 'CryptoCompare')
                     })
     except:
@@ -177,13 +204,31 @@ def get_crypto_news():
     return news[:5]
 
 def get_john_economist_video():
-    url = "https://www.youtube.com/results?search_query=John+Economist&sp=CAI%253D"
-    headers = {'User-Agent': 'Mozilla/5.0'}
     try:
+        import urllib.request
+        url = "https://www.youtube.com/@JohnEconomist/videos"
+        req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
+        response = urllib.request.urlopen(req, timeout=10)
+        data = response.read().decode('utf-8')
+        
+        match = re.search(r'"videoId":"([^"]+)","title":"([^"]+)","thumbnail"', data)
+        if match:
+            video_id = match.group(1)
+            title = match.group(2).replace('\\u0026', '&').replace('\\"', '"')
+            return {
+                'title': title,
+                'url': f"https://www.youtube.com/watch?v={video_id}"
+            }
+    except Exception as e:
+        pass
+    
+    try:
+        url = "https://www.youtube.com/results?search_query=John+Economist"
+        headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
         r = requests.get(url, headers=headers, timeout=10)
         if r.status_code == 200:
             data = r.text
-            match = re.search(r'"videoId":"([^"]+)","title":"([^"]+)","length', data)
+            match = re.search(r'"videoId":"([^"]+)","title":"([^"]+)","length"', data)
             if match:
                 video_id = match.group(1)
                 title = match.group(2).replace('\\u0026', '&')
@@ -202,9 +247,9 @@ def generate_conclusion(market_news, crypto_news, indices, cryptos):
     negative = len(indices) - positive
     
     if positive > negative:
-        conclusions.append("Día positivo en mercados.")
+        conclusions.append("Dia positivo en mercados.")
     elif negative > positive:
-        conclusions.append("Día negativo en mercados.")
+        conclusions.append("Dia negativo en mercados.")
     else:
         conclusions.append("Mercados laterales hoy.")
     
@@ -212,65 +257,66 @@ def generate_conclusion(market_news, crypto_news, indices, cryptos):
     if crypto_pos > len(cryptos) / 2:
         conclusions.append("Criptomonedas muestran fuerza.")
     elif crypto_pos < len(cryptos) / 2 and crypto_pos > 0:
-        conclusions.append("Criptomonedas bajo presión.")
+        conclusions.append("Criptomonedas bajo presion.")
     
     return " ".join(conclusions)
 
 def format_message(market_news, crypto_news, stocks, indices, cryptos, video):
     now = datetime.now(SPAIN_TZ).strftime("%d/%m/%Y")
     
-    msg = f"📊 *INFORME DIARIO – ECONOMÍA Y MERCADOS* | {now}\n"
+    msg = f"📊 *INFORME DIARIO - ECONOMIA Y MERCADOS* | {now}\n\n"
     msg += "─────────────────────\n\n"
     
-    msg += "📰 *NOTICIAS ECONÓMICAS – MERCADOS*\n\n"
+    msg += "📰 *NOTICIAS ECONOMICAS - MERCADOS*\n\n"
     for i, item in enumerate(market_news, 1):
-        msg += f"• *{i:02d}. {item['title'][:70]}*\n"
+        msg += f"*• {i:02d}. {item['title'][:65]}*\n"
         if item.get('description'):
-            msg += f"   {item['description']}\n"
-        msg += f"   📰 {item['source']}\n\n"
+            msg += f"   {item['description']}\n\n"
+        msg += f"   Fuente: {item['source']}\n\n"
     
     msg += "─────────────────────\n\n"
     
-    msg += "📰 *NOTICIAS ECONÓMICAS – CRIPTO*\n\n"
+    msg += "📰 *NOTICIAS ECONOMICAS - CRIPTO*\n\n"
     for i, item in enumerate(crypto_news, 1):
-        msg += f"• *{i:02d}. {item['title'][:70]}*\n"
+        msg += f"*• {i:02d}. {item['title'][:65]}*\n"
         if item.get('description'):
-            msg += f"   {item['description']}\n"
-        msg += f"   📰 {item['source']}\n\n"
+            msg += f"   {item['description']}\n\n"
+        msg += f"   Fuente: {item['source']}\n\n"
     
     msg += "─────────────────────\n\n"
-    msg += "📈 *ANÁLISIS DE MERCADOS*\n\n"
+    msg += "📈 *ANALISIS DE MERCADOS*\n\n"
     
     for stock in stocks:
-        msg += f"*— {stock['name']}*\n"
-        msg += f"• Precio: {stock['price']}\n"
-        msg += f"• Tendencia: {stock['trend']}\n"
-        msg += f"• RSI (14): {stock['rsi']}\n"
-        msg += f"• Lectura: {stock['rsi_reading']}\n\n"
+        msg += f"- {stock['name']}\n"
+        msg += f"  Precio: {stock['price']}\n"
+        msg += f"  Tendencia: {stock['trend']}\n"
+        msg += f"  RSI (14): {stock['rsi']}\n"
+        msg += f"  Lectura: {stock['rsi_reading']}\n\n"
     
     msg += "─────────────────────\n\n"
-    msg += "📊 *RESUMEN DE ÍNDICES*\n\n"
+    msg += "📊 *RESUMEN DE INDICES*\n\n"
     
     for idx in indices:
         sign = "+" if idx['change'] > 0 else ""
-        msg += f"• {idx['name']} –> {sign}{idx['change']}% {idx['trend']}\n"
+        trend_text = f"({idx['trend']})" if idx['trend'] else ""
+        msg += f"• {idx['name']} -> {sign}{idx['change']}% {trend_text}\n"
     
     msg += "\n─────────────────────\n\n"
-    msg += "📈 *ANÁLISIS CRIPTO*\n\n"
+    msg += "📈 *ANALISIS CRIPTO*\n\n"
     
     for crypto in cryptos:
-        msg += f"*— {crypto['name']}*\n"
-        msg += f"• Precio: {crypto['price']} $\n"
-        msg += f"• Tendencia: {crypto['trend']}\n"
+        msg += f"- {crypto['name']}\n"
+        msg += f"  Precio: {crypto['price']} $\n"
+        msg += f"  Tendencia: {crypto['trend']}\n"
         if crypto.get('rsi'):
-            msg += f"• RSI (14): {crypto['rsi']}\n"
-            msg += f"• Lectura: {crypto['rsi_reading']}\n"
+            msg += f"  RSI (14): {crypto['rsi']}\n"
+            msg += f"  Lectura: {crypto['rsi_reading']}\n"
         msg += "\n"
     
     msg += "─────────────────────\n\n"
     
     conclusion = generate_conclusion(market_news, crypto_news, indices, cryptos)
-    msg += f"🧠 *CONCLUSIÓN DEL DÍA*\n{conclusion}\n\n"
+    msg += f"🧠 *CONCLUSION DEL DIA*\n{conclusion}\n\n"
     msg += "─────────────────────\n\n"
     
     msg += "🎬 *JOHN ECONOMIST*\n"
