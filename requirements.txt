@@ -2,4 +2,3 @@ requests
 pytz
 yfinance
 numpy
-huggingface_hub
