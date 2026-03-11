@@ -214,4 +214,43 @@ def make_msg(news, cryptos, stocks, indices, crypton, video):
         if n.get('desc'): m += f"   {n['desc']}\n"
         m += f"   ({n['source']})\n\n"
     m += "───────────────\n\n📰 *NOTICIAS - CRIPTO*\n\n"
-    for i, n in enumerate(crypton,
+    for i, n in enumerate(crypton, 1):
+        m += f"*{i:02d}. {n['title'][:60]}*\n"
+        if n.get('desc'): m += f"   {n['desc']}\n"
+        m += f"   ({n['source']})\n\n"
+    m += "───────────────\n\n📈 *ANALISIS MERCADOS*\n\n"
+    for s in stocks:
+        m += f"- {s['name']}\n  Precio: {s['price']} | Cambio: {s['change']}% ({s['trend']})\n  RSI: {s['rsi']} - {s['rsi_label']}\n\n"
+    m += "📊 *INDICES*\n\n"
+    for i in indices:
+        s = "+" if i['change'] > 0 else ""
+        m += f"• {i['name']}: {s}{i['change']}% ({i['trend']})\n"
+    m += "\n───────────────\n\n📈 *ANALISIS CRIPTO*\n\n"
+    for c in cryptos:
+        m += f"- {c['name']}: {c['price']}$ ({c['change']}% {c['trend']})\n"
+        if c.get('rsi'): m += f"  RSI: {c['rsi']} - {c['rsi_label']}\n"
+        m += "\n"
+    m += "───────────────\n\n🧠 *CONCLUSION*\n"
+    pos = sum(1 for i in indices if i['change'] > 0)
+    m += "Dia positivo en mercados.\n" if pos > 2 else "Dia negativo en mercados.\n" if pos < 2 else "Mercados laterales.\n"
+    cpos = sum(1 for c in cryptos if c['change'] > 0)
+    m += "Criptos al alza.\n" if cpos > 1 else "Criptos a la baja.\n"
+    m += "───────────────\n\n🎬 *JOHN ECONOMIST*\n"
+    if video: m += f"{video['title']}\n{video['url']}\n"
+    else: m += "Sin video nuevo.\n"
+    return m
+
+def main():
+    print("Starting...")
+    news = get_market_news()
+    crypton = get_crypto_news()
+    stocks = [s for s in [get_stock("VWCE.MI", "MSCI World"), get_stock("NVDA", "NVIDIA")] if s]
+    indices = [get_index("^GSPC", "S&P 500"), get_index("^IXIC", "NASDAQ"), get_index("^IBEX", "IBEX 35"), get_index("^STOXX", "STOXX 600")]
+    cryptos = [c for c in [get_crypto("bitcoin", "BTC"), get_crypto("ethereum", "ETH"), get_crypto("ripple", "XRP")] if c]
+    video = get_video()
+    msg = make_msg(news, cryptos, stocks, indices, crypton, video)
+    send_telegram(msg)
+    print("Done!")
+
+if __name__ == "__main__":
+    main()
