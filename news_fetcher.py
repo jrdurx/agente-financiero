@@ -14,9 +14,15 @@ TELEGRAM_CHAT_ID = os.getenv('TELEGRAM_CHAT_ID')
 HF_TOKEN = os.getenv('HF_TOKEN')
 SPAIN_TZ = pytz.timezone('Europe/Madrid')
 
-def summarize_with_ai(text):
-    if not text or len(text.strip()) < 50:
+def summarize_with_ai(text, summary_type="body"):
+    if not text or len(text.strip()) < 30:
         return "Sin información disponible."
+    
+    word_limits = {
+        "headline": 65,
+        "body": 150
+    }
+    max_words = word_limits.get(summary_type, 150)
     
     if not HF_TOKEN:
         print("No HF_TOKEN configured")
@@ -29,11 +35,11 @@ def summarize_with_ai(text):
             "Content-Type": "application/json"
         }
         
-        prompt = f"""Eres un experto en análisis financiero. Resume la siguiente noticia en 5-6 frases claras y concisas, capturando los puntos clave:
+        prompt = f"""Eres un experto en análisis financiero. Resume la siguiente noticia en exactamente {max_words} palabras:
 
-{text[:2500]}
+{text[:4000]}
 
-Resumen:"""
+Resumen en {max_words} palabras:"""
 
         data = {
             "model": "meta-llama/Llama-3.2-1B-Instruct",
@@ -44,28 +50,22 @@ Resumen:"""
             "temperature": 0.7
         }
         
-        response = requests.post(url, headers=headers, json=data, timeout=60)
+        response = requests.post(url, headers=headers, json=data, timeout=90)
         
         if response.status_code == 200:
             result = response.json()
             if 'choices' in result and len(result['choices']) > 0:
                 summary = result['choices'][0]['message']['content'].strip()
                 if summary and len(summary) > 20:
-                    print(f"AI Summary OK: {len(summary)} chars")
+                    print(f"AI Summary ({summary_type}): {len(summary)} chars")
                     return summary
         
-        print(f"HF API response: {response.status_code} - {response.text[:100]}")
+        print(f"HF API response: {response.status_code}")
     except Exception as e:
         print(f"AI error: {e}")
     
-    sentences = re.split(r'[.!?]+', text)
-    summary_parts = []
-    for s in sentences[:4]:
-        s = s.strip()
-        if s and len(s) > 15:
-            summary_parts.append(s)
-    
-    return ". ".join(summary_parts)[:400] + "..." if summary_parts else text[:300] + "..."
+    words = text.split()[:max_words]
+    return " ".join(words) + "..."
 
 def send_telegram(message):
     try:
@@ -209,12 +209,12 @@ def get_market_news():
                 for item in root.findall('.//item')[:5]:
                     title = item.findtext('title', '')
                     desc = clean_html(item.findtext('description', ''))
-                    full_text = f"Titular: {title}. Descripcion: {desc}" if title else ""
+                    full_text = f"Titular: {title}. Descripcion completa: {desc}" if title else ""
                     
                     if title and title not in seen:
                         seen.add(title)
                         print(f"Processing market news: {title[:40]}...")
-                        ai_summary = summarize_with_ai(full_text)
+                        ai_summary = summarize_with_ai(full_text, summary_type="body")
                         news.append({'title': title, 'summary': ai_summary, 'source': 'Yahoo Finance'})
             except Exception as e:
                 print(f"Error parsing Yahoo: {e}")
@@ -230,12 +230,12 @@ def get_market_news():
                 for item in root.findall('.//item')[:5]:
                     title = item.findtext('title', '')
                     desc = clean_html(item.findtext('description', ''))
-                    full_text = f"Titular: {title}. Descripcion: {desc}"
+                    full_text = f"Titular: {title}. Descripcion completa: {desc}"
                     
                     if title and title not in seen:
                         seen.add(title)
                         print(f"Processing Google news: {title[:40]}...")
-                        ai_summary = summarize_with_ai(full_text)
+                        ai_summary = summarize_with_ai(full_text, summary_type="body")
                         news.append({'title': title, 'summary': ai_summary, 'source': 'Google News'})
         except Exception as e:
             print(f"Error fetching Google: {e}")
@@ -251,12 +251,12 @@ def get_crypto_news():
             for item in r.json().get('Data', [])[:5]:
                 title = item.get('title', '')
                 body = item.get('body', '')
-                full_text = f"Noticia: {title}. Contenido: {body}"
+                full_text = f"Titular: {title}. Contenido completo: {body}"
                 
                 if title and title not in seen:
                     seen.add(title)
                     print(f"Processing crypto news: {title[:40]}...")
-                    ai_summary = summarize_with_ai(full_text)
+                    ai_summary = summarize_with_ai(full_text, summary_type="body")
                     source_name = item.get('source_info', {}).get('name', 'Crypto')
                     news.append({'title': title, 'summary': ai_summary, 'source': source_name})
     except Exception as e:
@@ -286,16 +286,16 @@ def make_msg(news, cryptos, stocks, indices, crypton, video):
     
     m += "📰 *NOTICIAS - MERCADOS*\n\n"
     for i, n in enumerate(news, 1):
-        m += f"*{i:02d}. {n['title'][:60]}*\n"
+        m += f"*{i:02d}. {n['title']}*\n"
         if n.get('summary'):
-            m += f"{n['summary']}\n"
+            m += f"   {n['summary']}\n"
         m += f"   ({n['source']})\n\n"
     
     m += "───────────────\n\n📰 *NOTICIAS - CRIPTO*\n\n"
     for i, n in enumerate(crypton, 1):
-        m += f"*{i:02d}. {n['title'][:60]}*\n"
+        m += f"*{i:02d}. {n['title']}*\n"
         if n.get('summary'):
-            m += f"{n['summary']}\n"
+            m += f"   {n['summary']}\n"
         m += f"   ({n['source']})\n\n"
     
     m += "───────────────\n\n📈 *ANALISIS MERCADOS*\n\n"
