@@ -6,89 +6,85 @@ from datetime import datetime
 import pytz
 import yfinance as yf
 import numpy as np
+import json
+import time
 
 TELEGRAM_TOKEN = os.getenv('TELEGRAM_TOKEN')
 TELEGRAM_CHAT_ID = os.getenv('TELEGRAM_CHAT_ID')
 HF_TOKEN = os.getenv('HF_TOKEN')
 SPAIN_TZ = pytz.timezone('Europe/Madrid')
 
-def summarize_text(text, max_chars=700):
+def summarize_with_ai(text):
     if not text or len(text.strip()) < 50:
         return "Sin información disponible."
     
-    text = text.strip()
+    if not HF_TOKEN:
+        print("No HF_TOKEN configured")
+        return text[:300] + "..."
     
-    if HF_TOKEN:
-        try:
-            url = "https://api-inference.huggingface.co/pipeline/summarization/facebook/bart-large-cnn"
-            headers = {
-                "Authorization": f"Bearer {HF_TOKEN}",
-                "Content-Type": "application/json"
-            }
-            data = {"inputs": text[:1500], "parameters": {"max_new_tokens": 200}}
-            
-            response = requests.post(url, headers=headers, json=data, timeout=45)
-            
-            if response.status_code == 200:
-                result = response.json()
-                if isinstance(result, list) and len(result) > 0:
-                    summary = result[0].get('summary_text', '').strip()
-                    if summary and len(summary) > 10:
-                        if len(summary) > max_chars:
-                            summary = summary[:max_chars] + "..."
-                        return summary
-            else:
-                print(f"HF API: {response.status_code} - fallback")
-        except Exception as e:
-            print(f"HF error: {e}")
+    try:
+        url = "https://router.huggingface.co/v1/chat/completions"
+        headers = {
+            "Authorization": f"Bearer {HF_TOKEN}",
+            "Content-Type": "application/json"
+        }
+        
+        prompt = f"""Eres un experto en análisis financiero. Resume la siguiente noticia en 5-6 frases claras y concisas, capturando los puntos clave:
+
+{text[:2500]}
+
+Resumen:"""
+
+        data = {
+            "model": "meta-llama/Llama-3.2-1B-Instruct",
+            "messages": [
+                {"role": "user", "content": prompt}
+            ],
+            "max_tokens": 300,
+            "temperature": 0.7
+        }
+        
+        response = requests.post(url, headers=headers, json=data, timeout=60)
+        
+        if response.status_code == 200:
+            result = response.json()
+            if 'choices' in result and len(result['choices']) > 0:
+                summary = result['choices'][0]['message']['content'].strip()
+                if summary and len(summary) > 20:
+                    print(f"AI Summary OK: {len(summary)} chars")
+                    return summary
+        
+        print(f"HF API response: {response.status_code} - {response.text[:100]}")
+    except Exception as e:
+        print(f"AI error: {e}")
     
     sentences = re.split(r'[.!?]+', text)
     summary_parts = []
-    char_count = 0
-    
-    for s in sentences[:5]:
+    for s in sentences[:4]:
         s = s.strip()
         if s and len(s) > 15:
-            if char_count + len(s) > max_chars * 0.8:
-                break
             summary_parts.append(s)
-            char_count += len(s)
     
-    summary = ". ".join(summary_parts)
-    if len(summary) > max_chars:
-        summary = summary[:max_chars] + "..."
-    
-    return summary if summary else text[:max_chars] + "..."
+    return ". ".join(summary_parts)[:400] + "..." if summary_parts else text[:300] + "..."
 
 def send_telegram(message):
     try:
         print(f"Message length: {len(message)} chars")
         
         if len(message) > 4000:
-            print("Message too long, splitting...")
-            part1 = message[:4000]
-            last_newline = part1.rfind('\n')
-            if last_newline < 3000:
-                last_newline = part1.rfind('\n\n')
-            if last_newline < 3000:
-                last_newline = 4000
-            
-            part1 = message[:last_newline]
-            part2 = message[last_newline:]
+            parts = []
+            for i in range(0, len(message), 3900):
+                parts.append(message[i:i+3900])
             
             url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
-            r1 = requests.post(url, json={"chat_id": TELEGRAM_CHAT_ID, "text": part1, "parse_mode": "Markdown"}, timeout=15)
-            print(f"Telegram part1: {r1.status_code}")
-            
-            if r1.status_code == 200 and part2:
-                import time
-                time.sleep(1)
-                r2 = requests.post(url, json={"chat_id": TELEGRAM_CHAT_ID, "text": part2, "parse_mode": "Markdown"}, timeout=15)
-                print(f"Telegram part2: {r2.status_code}")
+            for idx, part in enumerate(parts):
+                r = requests.post(url, json={"chat_id": TELEGRAM_CHAT_ID, "text": part, "parse_mode": "Markdown"}, timeout=15)
+                print(f"Telegram part {idx+1}: {r.status_code}")
+                if idx < len(parts) - 1:
+                    time.sleep(1)
         else:
             url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
-            data = {"chat_id": TELEGRAM_CHAT_ID, "text": message, "parse_mode": "Markdown"}
-            r = requests.post(url, json=data, timeout=15)
+            r = requests.post(url, json={"chat_id": TELEGRAM_CHAT_ID, "text": message, "parse_mode": "Markdown"}, timeout=15)
             print(f"Telegram response: {r.status_code}")
             if r.status_code != 200:
                 print(f"Telegram error: {r.text}")
@@ -103,18 +99,6 @@ def clean_html(text):
     text = text.replace('&amp;', '&')
     text = text.replace('&quot;', '"')
     return text.strip()
-
-def clean_text(text, max_len=120):
-    if not text:
-        return ""
-    text = clean_html(text).strip()
-    if len(text) <= max_len:
-        return text
-    text = text[:max_len]
-    last_space = text.rfind(' ')
-    if last_space > max_len * 0.6:
-        text = text[:last_space]
-    return text + "..."
 
 def calculate_rsi(prices, period=14):
     if prices is None or len(prices) < period + 1:
@@ -224,17 +208,18 @@ def get_market_news():
                 root = ET.fromstring(r.text)
                 for item in root.findall('.//item')[:5]:
                     title = item.findtext('title', '')
-                    link = item.findtext('link', '')
-                    desc = item.findtext('description', '')
-                    full_text = f"{title}. {clean_html(desc)}"
+                    desc = clean_html(item.findtext('description', ''))
+                    full_text = f"Titular: {title}. Descripcion: {desc}" if title else ""
                     
                     if title and title not in seen:
                         seen.add(title)
-                        news.append({'title': title[:70], 'full_text': full_text, 'source': 'Yahoo Finance'})
-            except:
-                pass
-    except:
-        pass
+                        print(f"Processing market news: {title[:40]}...")
+                        ai_summary = summarize_with_ai(full_text)
+                        news.append({'title': title, 'summary': ai_summary, 'source': 'Yahoo Finance'})
+            except Exception as e:
+                print(f"Error parsing Yahoo: {e}")
+    except Exception as e:
+        print(f"Error fetching Yahoo: {e}")
     
     if len(news) < 3:
         try:
@@ -244,17 +229,16 @@ def get_market_news():
                 root = ET.fromstring(r.text)
                 for item in root.findall('.//item')[:5]:
                     title = item.findtext('title', '')
+                    desc = clean_html(item.findtext('description', ''))
+                    full_text = f"Titular: {title}. Descripcion: {desc}"
+                    
                     if title and title not in seen:
                         seen.add(title)
-                        desc = clean_html(item.findtext('description', ''))
-                        news.append({'title': title[:70], 'full_text': f"{title}. {desc}", 'source': 'Google News'})
-        except:
-            pass
-    
-    for n in news:
-        print(f"Generando resumen IA para: {n['title'][:40]}...")
-        n['summary'] = summarize_text(n['full_text'])
-        del n['full_text']
+                        print(f"Processing Google news: {title[:40]}...")
+                        ai_summary = summarize_with_ai(full_text)
+                        news.append({'title': title, 'summary': ai_summary, 'source': 'Google News'})
+        except Exception as e:
+            print(f"Error fetching Google: {e}")
     
     return news[:5]
 
@@ -267,17 +251,16 @@ def get_crypto_news():
             for item in r.json().get('Data', [])[:5]:
                 title = item.get('title', '')
                 body = item.get('body', '')
-                full_text = f"{title}. {body}"
+                full_text = f"Noticia: {title}. Contenido: {body}"
+                
                 if title and title not in seen:
                     seen.add(title)
-                    news.append({'title': title[:70], 'full_text': full_text, 'source': item.get('source_info', {}).get('name', 'Crypto')})
-    except:
-        pass
-    
-    for n in news:
-        print(f"Generando resumen IA para crypto: {n['title'][:40]}...")
-        n['summary'] = summarize_text(n['full_text'])
-        del n['full_text']
+                    print(f"Processing crypto news: {title[:40]}...")
+                    ai_summary = summarize_with_ai(full_text)
+                    source_name = item.get('source_info', {}).get('name', 'Crypto')
+                    news.append({'title': title, 'summary': ai_summary, 'source': source_name})
+    except Exception as e:
+        print(f"Error fetching crypto: {e}")
     
     return news[:5]
 
@@ -300,48 +283,64 @@ def get_video():
 def make_msg(news, cryptos, stocks, indices, crypton, video):
     now = datetime.now(SPAIN_TZ).strftime("%d/%m/%Y")
     m = f"📊 *INFORME DIARIO - ECONOMIA Y MERCADOS* | {now}\n\n───────────────\n\n"
+    
     m += "📰 *NOTICIAS - MERCADOS*\n\n"
     for i, n in enumerate(news, 1):
         m += f"*{i:02d}. {n['title'][:60]}*\n"
-        if n.get('summary'): m += f"{n['summary']}\n"
+        if n.get('summary'):
+            m += f"{n['summary']}\n"
         m += f"   ({n['source']})\n\n"
+    
     m += "───────────────\n\n📰 *NOTICIAS - CRIPTO*\n\n"
     for i, n in enumerate(crypton, 1):
         m += f"*{i:02d}. {n['title'][:60]}*\n"
-        if n.get('summary'): m += f"{n['summary']}\n"
+        if n.get('summary'):
+            m += f"{n['summary']}\n"
         m += f"   ({n['source']})\n\n"
+    
     m += "───────────────\n\n📈 *ANALISIS MERCADOS*\n\n"
     for s in stocks:
         m += f"- {s['name']}\n  Precio: {s['price']} | Cambio: {s['change']}% ({s['trend']})\n  RSI: {s['rsi']} - {s['rsi_label']}\n\n"
+    
     m += "📊 *INDICES*\n\n"
     for i in indices:
         s = "+" if i['change'] > 0 else ""
         m += f"• {i['name']}: {s}{i['change']}% ({i['trend']})\n"
     m += "\n───────────────\n\n📈 *ANALISIS CRIPTO*\n\n"
+    
     for c in cryptos:
         m += f"- {c['name']}: {c['price']}$ ({c['change']}% {c['trend']})\n"
-        if c.get('rsi'): m += f"  RSI: {c['rsi']} - {c['rsi_label']}\n"
+        if c.get('rsi'):
+            m += f"  RSI: {c['rsi']} - {c['rsi_label']}\n"
         m += "\n"
+    
     m += "───────────────\n\n🧠 *CONCLUSION*\n"
     pos = sum(1 for i in indices if i['change'] > 0)
     m += "Dia positivo en mercados.\n" if pos > 2 else "Dia negativo en mercados.\n" if pos < 2 else "Mercados laterales.\n"
     cpos = sum(1 for c in cryptos if c['change'] > 0)
     m += "Criptos al alza.\n" if cpos > 1 else "Criptos a la baja.\n"
     m += "───────────────\n\n🎬 *JOHN ECONOMIST*\n"
-    if video: m += f"{video['title']}\n{video['url']}\n"
-    else: m += "Sin video nuevo.\n"
+    if video:
+        m += f"{video['title']}\n{video['url']}\n"
+    else:
+        m += "Sin video nuevo.\n"
+    
     return m
 
 def main():
-    print("Starting...")
-    print(f"TELEGRAM_TOKEN set: {bool(TELEGRAM_TOKEN)}")
-    print(f"TELEGRAM_CHAT_ID set: {bool(TELEGRAM_CHAT_ID)}")
+    print("=" * 50)
+    print("INICIANDO AGENTE FINANCIERO")
+    print("=" * 50)
+    print(f"TELEGRAM_TOKEN: {'OK' if TELEGRAM_TOKEN else 'FALTA'}")
+    print(f"TELEGRAM_CHAT_ID: {'OK' if TELEGRAM_CHAT_ID else 'FALTA'}")
+    print(f"HF_TOKEN: {'OK' if HF_TOKEN else 'FALTA'}")
+    print("=" * 50)
     
     news = get_market_news()
-    print(f"Got {len(news)} market news")
+    print(f"Noticias mercados: {len(news)}")
     
     crypton = get_crypto_news()
-    print(f"Got {len(crypton)} crypto news")
+    print(f"Noticias crypto: {len(crypton)}")
     
     stocks = [s for s in [get_stock("VWCE.MI", "MSCI World"), get_stock("NVDA", "NVIDIA")] if s]
     indices = [get_index("^GSPC", "S&P 500"), get_index("^IXIC", "NASDAQ"), get_index("^IBEX", "IBEX 35"), get_index("^STOXX", "STOXX 600")]
@@ -349,10 +348,10 @@ def main():
     video = get_video()
     
     msg = make_msg(news, cryptos, stocks, indices, crypton, video)
-    print(f"Message generated: {len(msg)} chars")
+    print(f"Mensaje generado: {len(msg)} caracteres")
     
     send_telegram(msg)
-    print("Done!")
+    print("FINALIZADO!")
 
 if __name__ == "__main__":
     main()
