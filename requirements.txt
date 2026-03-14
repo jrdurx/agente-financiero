@@ -2,3 +2,4 @@ requests
 pytz
 yfinance
 numpy
+beautifulsoup4
