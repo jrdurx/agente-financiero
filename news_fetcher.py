@@ -259,7 +259,7 @@ def get_crypto_news():
     news = []
     seen = set()
     try:
-        r = requests.get("https://es.marketscreener.com/noticias/criptomonedas/, timeout=10)
+        r = requests.get("https://es.marketscreener.com/noticias/criptomonedas/", timeout=10)
         if r.status_code == 200:
             for item in r.json().get('Data', [])[:5]:
                 title = item.get('title', '')
