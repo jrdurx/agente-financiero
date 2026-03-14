@@ -6,13 +6,18 @@ from datetime import datetime
 import pytz
 import yfinance as yf
 import numpy as np
-import json
 import time
 
-TELEGRAM_TOKEN = os.getenv('TELEGRAM_TOKEN')
-TELEGRAM_CHAT_ID = os.getenv('TELEGRAM_CHAT_ID')
-HF_TOKEN = os.getenv('HF_TOKEN')
+TELEGRAM_TOKEN = os.environ.get('TELEGRAM_TOKEN', '')
+TELEGRAM_CHAT_ID = os.environ.get('TELEGRAM_CHAT_ID', '')
+HF_TOKEN = os.environ.get('HF_TOKEN', '')
 SPAIN_TZ = pytz.timezone('Europe/Madrid')
+
+print(f"=== CONFIGURATION ===")
+print(f"TELEGRAM_TOKEN set: {bool(TELEGRAM_TOKEN)} (length: {len(TELEGRAM_TOKEN)})")
+print(f"TELEGRAM_CHAT_ID set: {bool(TELEGRAM_CHAT_ID)} (value: {TELEGRAM_CHAT_ID})")
+print(f"HF_TOKEN set: {bool(HF_TOKEN)} (length: {len(HF_TOKEN)})")
+print(f"=====================")
 
 def summarize_with_ai(text, summary_type="body"):
     if not text or len(text.strip()) < 30:
@@ -25,7 +30,7 @@ def summarize_with_ai(text, summary_type="body"):
     max_words = word_limits.get(summary_type, 150)
     
     if not HF_TOKEN:
-        print("No HF_TOKEN configured")
+        print("WARNING: No HF_TOKEN, using fallback")
         return text[:300] + "..."
     
     try:
@@ -57,10 +62,10 @@ Resumen en {max_words} palabras:"""
             if 'choices' in result and len(result['choices']) > 0:
                 summary = result['choices'][0]['message']['content'].strip()
                 if summary and len(summary) > 20:
-                    print(f"AI Summary ({summary_type}): {len(summary)} chars")
+                    print(f"AI Summary ({summary_type}): {len(summary)} chars - OK")
                     return summary
         
-        print(f"HF API response: {response.status_code}")
+        print(f"HF API error: {response.status_code}")
     except Exception as e:
         print(f"AI error: {e}")
     
@@ -68,9 +73,15 @@ Resumen en {max_words} palabras:"""
     return " ".join(words) + "..."
 
 def send_telegram(message):
+    print(f"Trying to send message: {len(message)} chars")
+    print(f"TELEGRAM_TOKEN: {'set' if TELEGRAM_TOKEN else 'MISSING'}")
+    print(f"TELEGRAM_CHAT_ID: {TELEGRAM_CHAT_ID if TELEGRAM_CHAT_ID else 'MISSING'}")
+    
+    if not TELEGRAM_TOKEN or not TELEGRAM_CHAT_ID:
+        print("ERROR: Missing Telegram credentials!")
+        return
+    
     try:
-        print(f"Message length: {len(message)} chars")
-        
         if len(message) > 4000:
             parts = []
             for i in range(0, len(message), 3900):
@@ -80,6 +91,8 @@ def send_telegram(message):
             for idx, part in enumerate(parts):
                 r = requests.post(url, json={"chat_id": TELEGRAM_CHAT_ID, "text": part, "parse_mode": "Markdown"}, timeout=15)
                 print(f"Telegram part {idx+1}: {r.status_code}")
+                if r.status_code != 200:
+                    print(f"Error: {r.text}")
                 if idx < len(parts) - 1:
                     time.sleep(1)
         else:
@@ -330,10 +343,6 @@ def make_msg(news, cryptos, stocks, indices, crypton, video):
 def main():
     print("=" * 50)
     print("INICIANDO AGENTE FINANCIERO")
-    print("=" * 50)
-    print(f"TELEGRAM_TOKEN: {'OK' if TELEGRAM_TOKEN else 'FALTA'}")
-    print(f"TELEGRAM_CHAT_ID: {'OK' if TELEGRAM_CHAT_ID else 'FALTA'}")
-    print(f"HF_TOKEN: {'OK' if HF_TOKEN else 'FALTA'}")
     print("=" * 50)
     
     news = get_market_news()
