@@ -7,6 +7,7 @@ import pytz
 import yfinance as yf
 import numpy as np
 import time
+from bs4 import BeautifulSoup
 
 TELEGRAM_TOKEN = os.environ.get('TELEGRAM_TOKEN', '')
 TELEGRAM_CHAT_ID = os.environ.get('TELEGRAM_CHAT_ID', '')
@@ -259,21 +260,58 @@ def get_crypto_news():
     news = []
     seen = set()
     try:
-        r = requests.get("https://es.marketscreener.com/noticias/criptomonedas/", timeout=10)
+        url = "https://es.marketscreener.com/noticias/criptomonedas/"
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+        }
+        r = requests.get(url, headers=headers, timeout=15)
+        
         if r.status_code == 200:
-            for item in r.json().get('Data', [])[:5]:
-                title = item.get('title', '')
-                body = item.get('body', '')
-                full_text = f"Titular: {title}. Contenido completo: {body}"
+            soup = BeautifulSoup(r.text, 'html.parser')
+            
+            articles = soup.find_all('h3', class_='mb-1')[:5]
+            
+            if not articles:
+                articles = soup.find_all('h3')[:5]
+            
+            for article in articles:
+                title = article.get_text(strip=True) if article else ''
+                
+                desc = ''
+                parent = article.parent if article else None
+                if parent:
+                    desc_elem = parent.find('p')
+                    if desc_elem:
+                        desc = desc_elem.get_text(strip=True)
+                
+                full_text = f"Titular: {title}. Contenido: {desc}" if title else ""
                 
                 if title and title not in seen:
                     seen.add(title)
                     print(f"Processing crypto news: {title[:40]}...")
                     ai_summary = summarize_with_ai(full_text, summary_type="body")
-                    source_name = item.get('source_info', {}).get('name', 'Crypto')
-                    news.append({'title': title, 'summary': ai_summary, 'source': source_name})
+                    news.append({'title': title, 'summary': ai_summary, 'source': 'Marketscreener'})
+    
     except Exception as e:
         print(f"Error fetching crypto: {e}")
+    
+    if len(news) < 3:
+        try:
+            r = requests.get("https://min-api.cryptocompare.com/data/v2/news/?lang=ES", timeout=10)
+            if r.status_code == 200:
+                for item in r.json().get('Data', [])[:5]:
+                    title = item.get('title', '')
+                    body = item.get('body', '')
+                    full_text = f"Titular: {title}. Contenido completo: {body}"
+                    
+                    if title and title not in seen:
+                        seen.add(title)
+                        print(f"Processing crypto fallback: {title[:40]}...")
+                        ai_summary = summarize_with_ai(full_text, summary_type="body")
+                        source_name = item.get('source_info', {}).get('name', 'Crypto')
+                        news.append({'title': title, 'summary': ai_summary, 'source': source_name})
+        except Exception as e:
+            print(f"Error fetching crypto fallback: {e}")
     
     return news[:5]
 
